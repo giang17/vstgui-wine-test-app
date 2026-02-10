@@ -22,6 +22,8 @@
 #include "vstgui/lib/cfont.h"
 #include "vstgui/lib/controls/cknob.h"
 #include "vstgui/lib/controls/ctextlabel.h"
+#include "vstgui/lib/platform/platformfactory.h"
+#include "vstgui/lib/platform/win32/win32factory.h"
 
 using namespace VSTGUI;
 
@@ -503,27 +505,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
-    case WM_PAINT:
-        if (gFrame)
-        {
-            PAINTSTRUCT ps;
-            BeginPaint(hwnd, &ps);
-            EndPaint(hwnd, &ps);
-        }
-        return 0;
-
-    case WM_SIZE:
-        if (gFrame)
-        {
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            CRect newSize(0, 0, rc.right, rc.bottom);
-            gFrame->setSize(rc.right, rc.bottom);
-            gFrame->setViewSize(newSize);
-            gFrame->invalid();
-        }
-        return 0;
-
+    case WM_ERASEBKGND:
+        return 1; // Suppress default erase — VSTGUI child covers entire client area
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -538,6 +521,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
     // Initialize VSTGUI
     VSTGUI::init(hInstance);
+
+    // Disable DirectComposition (not implemented in Wine, causes ~10s timeout)
+    if (auto win32Factory = getPlatformFactory().asWin32Factory())
+        win32Factory->disableDirectComposition();
 
     // Register window class
     WNDCLASSEX wcex = {};
@@ -563,8 +550,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         return 1;
     }
 
-    // Create CFrame and attach to HWND
-    CRect frameSize(0, 0, 600, 460);
+    // Get actual client area size for CFrame
+    RECT clientRect;
+    GetClientRect(hwnd, &clientRect);
+    CRect frameSize(0, 0, clientRect.right, clientRect.bottom);
     gFrame = new CFrame(frameSize, &gEditor);
     gEditor.frame = gFrame;
 
@@ -594,6 +583,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
+
+    // Force initial repaint (without DirectComposition, VSTGUI may not
+    // trigger the first paint automatically under Wine)
+    gFrame->invalid();
+    InvalidateRect(hwnd, nullptr, TRUE);
 
     // Message loop
     MSG msg;
