@@ -507,6 +507,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
     case WM_ERASEBKGND:
         return 1; // Suppress default erase — VSTGUI child covers entire client area
+    case WM_TIMER:
+        if (wParam == 1)
+        {
+            KillTimer(hwnd, 1);
+            // Repaint: invalidate VSTGUI frame + all child windows
+            if (gFrame)
+                gFrame->invalid();
+            EnumChildWindows(hwnd, [](HWND child, LPARAM) -> BOOL {
+                InvalidateRect(child, nullptr, TRUE);
+                return TRUE;
+            }, 0);
+            InvalidateRect(hwnd, nullptr, TRUE);
+            return 0;
+        }
+        break;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -584,10 +599,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
-    // Force initial repaint (without DirectComposition, VSTGUI may not
-    // trigger the first paint automatically under Wine)
-    gFrame->invalid();
-    InvalidateRect(hwnd, nullptr, TRUE);
+    // Schedule a deferred repaint to handle race condition where the window
+    // appears before VSTGUI's child window has finished its initial paint.
+    // The timer fires after the message loop starts, ensuring WM_PAINT is processed.
+    SetTimer(hwnd, 1, 50, nullptr);
 
     // Message loop
     MSG msg;
