@@ -1,0 +1,5 @@
+build-mingw/
+*.exe
+*.obj
+*.o
+*.a
